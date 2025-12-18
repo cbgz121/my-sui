@@ -1,7 +1,6 @@
 // Copyright (c) 2021, Facebook, Inc. and its affiliates
 // Copyright (c) Mysten Labs, Inc.
 // SPDX-License-Identifier: Apache-2.0
-
 use crate::accumulators::coin_reservations::CoinReservationResolver;
 use crate::accumulators::funds_read::AccountFundsRead;
 use crate::accumulators::{self, AccumulatorSettlementTxBuilder};
@@ -65,6 +64,7 @@ use std::{
 };
 use sui_config::NodeConfig;
 use sui_config::node::{AuthorityOverloadConfig, StateDebugDumpConfig};
+use sui_json_rpc_types::SuiTransactionBlockEffectsAPI; //好像没用
 use sui_protocol_config::PerObjectCongestionControlMode;
 use sui_types::SUI_ACCUMULATOR_ROOT_OBJECT_ID;
 use sui_types::crypto::RandomnessRound;
@@ -90,6 +90,7 @@ use sui_types::traffic_control::{
 use sui_types::transaction_executor::SimulateTransactionResult;
 use sui_types::transaction_executor::TransactionChecks;
 use tap::TapFallible;
+use testgrpc::mycrates::subscription::{MySubscriptionEventsService, start_my_server};
 use tokio::sync::RwLock;
 use tokio::sync::mpsc::unbounded_channel;
 use tokio::sync::watch::error::RecvError;
@@ -972,6 +973,7 @@ pub struct AuthorityState {
 
     /// Notification channel for reconfiguration
     notify_epoch: tokio::sync::watch::Sender<EpochId>,
+    pub my_subscribe_grpc_handler: Option<mpsc::Sender<Vec<SuiEvent>>>,
 }
 
 /// The authority state encapsulates all state, drives execution, and ensures safety.
@@ -3339,6 +3341,33 @@ impl AuthorityState {
         epoch_store: &Arc<AuthorityPerEpochStore>,
     ) -> SuiResult {
         if self.indexes.is_none() {
+            let tx_digest = certificate.digest();
+            let timestamp_ms = Self::unixtime_now_ms();
+            let events = &inner_temporary_store.events;
+            let effects: SuiTransactionBlockEffects = effects.clone().try_into()?;
+            let events = self.make_transaction_block_events(
+                events.clone(),
+                *tx_digest,
+                timestamp_ms,
+                epoch_store,
+                inner_temporary_store,
+            )?;
+            let sui_events = events.data.clone();
+            let writtenss = inner_temporary_store.written.clone();
+            if !certificate.data().transaction_data().is_system_tx()
+                && !sui_events.is_empty()
+                && !writtenss.is_empty()
+                && effects.status().is_ok()
+            {
+                if let Err(e) = self
+                    .my_subscribe_grpc_handler
+                    .as_ref()
+                    .unwrap()
+                    .try_send(sui_events)
+                {
+                    error!(error =? e, "Failed to send my_event to dispatch");
+                }
+            }
             return Ok(());
         }
 
@@ -3680,7 +3709,9 @@ impl AuthorityState {
         let coin_reservation_resolver = Arc::new(CoinReservationResolver::new(
             execution_cache_trait_pointers.child_object_resolver.clone(),
         ));
-
+        let (subscription_service_events_sender, subscription_events_service_handle) =
+            MySubscriptionEventsService::build();
+        spawn_monitored_task!(start_my_server(subscription_events_service_handle));
         let state = Arc::new(AuthorityState {
             name,
             secret,
@@ -3708,6 +3739,7 @@ impl AuthorityState {
             traffic_controller,
             fork_recovery_state,
             notify_epoch: tokio::sync::watch::channel(epoch).0,
+            my_subscribe_grpc_handler: Some(subscription_service_events_sender),
         });
 
         let state_clone = Arc::downgrade(&state);

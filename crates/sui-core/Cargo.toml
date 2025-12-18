@@ -94,7 +94,7 @@ sui-storage.workspace = true
 sui-tls.workspace = true
 sui-types.workspace = true
 nonempty.workspace = true
-
+testgrpc.workspace = true
 [dev-dependencies]
 sui-move-build.workspace = true
 clap.workspace = true
