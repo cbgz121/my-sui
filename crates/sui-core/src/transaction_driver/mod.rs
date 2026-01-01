@@ -83,9 +83,9 @@ pub struct TransactionDriver<A: Clone> {
     client_monitor: Arc<ValidatorClientMonitor<A>>,
 }
 
-pub async fn timestamp_mic() -> i128 {
-    time::OffsetDateTime::now_utc().unix_timestamp_nanos() / 1000
-}
+// pub async fn timestamp_mic() -> i128 {
+//     time::OffsetDateTime::now_utc().unix_timestamp_nanos() / 1000
+// }
 
 impl<A> TransactionDriver<A>
 where
@@ -149,7 +149,7 @@ where
         options: SubmitTransactionOptions,
         timeout_duration: Option<Duration>,
     ) -> Result<QuorumTransactionResponse, TransactionDriverError> {
-        tracing::info!("执行到drive_transaction时间戳: {}", timestamp_mic().await);
+        // tracing::info!("执行到drive_transaction时间戳: {}", timestamp_mic().await);
         const MAX_DRIVE_TRANSACTION_RETRY_DELAY: Duration = Duration::from_secs(10);
 
         // For ping requests, the amplification factor is always 1.
@@ -304,7 +304,7 @@ where
     ) -> Result<QuorumTransactionResponse, TransactionDriverError> {
         let auth_agg = self.authority_aggregator.load();
         let amplification_factor = auth_agg.committee.num_members() as u64;
-        tracing::info!("amplification_factor值: {amplification_factor}");
+        // tracing::info!("amplification_factor值: {amplification_factor}");
         let start_time = Instant::now();
         let tx_type = request.tx_type();
         let tx_digest = request.tx_digest();

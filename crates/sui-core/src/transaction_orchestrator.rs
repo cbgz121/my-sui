@@ -167,9 +167,9 @@ where
     }
 }
 
-pub async fn timestamp_mic() -> i128 {
-    time::OffsetDateTime::now_utc().unix_timestamp_nanos() / 1000
-}
+// pub async fn timestamp_mic() -> i128 {
+//     time::OffsetDateTime::now_utc().unix_timestamp_nanos() / 1000
+// }
 
 impl<A> TransactionOrchestrator<A>
 where
@@ -263,7 +263,7 @@ where
         request: ExecuteTransactionRequestV3,
         client_addr: Option<SocketAddr>,
     ) -> Result<ExecuteTransactionResponseV3, QuorumDriverError> {
-        tracing::info!("执行到execute_transaction_v3时间戳: {}", timestamp_mic().await);
+        // tracing::info!("执行到execute_transaction_v3时间戳: {}", timestamp_mic().await);
         let timer = Instant::now();
         let tx_type = if request.transaction.is_consensus_tx() {
             TxType::SharedObject
@@ -411,15 +411,17 @@ where
         client_addr: Option<SocketAddr>,
         enforce_live_input_objects: bool,
     ) -> Result<(QuorumTransactionResponse, IsTransactionExecutedLocally), QuorumDriverError> {
+        let t1 = Instant::now();
         let epoch_store = self.validator_state.load_epoch_store_one_call_per_task();
         let verified_transaction = epoch_store
             .verify_transaction_with_current_aliases(request.transaction.clone())
             .map_err(QuorumDriverError::InvalidUserSignature)?
             .into_tx();
         let tx_digest = *verified_transaction.digest();
-
+        tracing::info!("提交交易之前execute_transaction_with_effects_waiting耗时1: {:#?}", t1.elapsed());
         // Early validation check against local state before submission to catch non-retriable errors
         // TODO: Consider moving this check to TransactionDriver for per-retry validation
+        let t1 = Instant::now();
         if self.enable_early_validation
             && let Err(e) = self.validator_state.check_transaction_validity(
                 &epoch_store,
@@ -447,7 +449,8 @@ where
                 }
             }
         }
-
+        tracing::info!("提交交易之前execute_transaction_with_effects_waiting耗时2: {:#?}", t1.elapsed());
+        let t1 = Instant::now();
         // Add transaction to WAL log.
         let guard =
             TransactionSubmissionGuard::new(self.pending_tx_log.clone(), &verified_transaction);
@@ -484,7 +487,7 @@ where
         } else {
             1
         };
-
+        tracing::info!("提交交易之前execute_transaction_with_effects_waiting耗时3: {:#?}", t1.elapsed());
         // Wait for one of the execution futures to succeed, or all of them to fail.
         let mut execution_futures = FuturesUnordered::new();
         for i in 0..num_submissions {
@@ -651,6 +654,7 @@ where
         debug!("TO Received transaction execution request.");
 
         let timer = Instant::now();
+        let timer1 = Instant::now();
         let tx_type = if verified_transaction.is_consensus_tx() {
             TxType::SharedObject
         } else {
@@ -666,7 +670,10 @@ where
         let _wait_for_finality_gauge = scopeguard::guard(wait_for_finality_gauge, |in_flight| {
             in_flight.dec();
         });
-
+        tracing::info!(
+            "提交交易之前 execute_transaction_impl 耗时: {:#?}",
+            timer1.elapsed()
+        );
         let response = self
             .submit_with_transaction_driver(
                 &self.transaction_driver,
