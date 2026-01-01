@@ -309,10 +309,10 @@ where
         let tx_type = request.tx_type();
         let tx_digest = request.tx_digest();
         let ping_type = request.ping_type;
-        tracing::info!(
-            "执行到drive_transaction_once时间戳: {}",
-            timestamp_mic().await
-        );
+        // tracing::info!(
+        //     "执行到drive_transaction_once时间戳: {}",
+        //     timestamp_mic().await
+        // );
         let (name, submit_txn_result) = self
             .submitter
             .submit_transaction(
