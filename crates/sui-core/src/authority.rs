@@ -2548,13 +2548,14 @@ impl AuthorityState {
         mut transaction: TransactionData,
         checks: TransactionChecks,
     ) -> SuiResult<SimulateTransactionResult> {
+        let execution_start_time = Instant::now();
         if transaction.kind().is_system_tx() {
             return Err(SuiErrorKind::UnsupportedFeatureError {
                 error: "simulate does not support system transactions".to_string(),
             }
             .into());
         }
-
+        let t1 = Instant::now();
         let epoch_store = self.load_epoch_store_one_call_per_task();
         if !self.is_fullnode(&epoch_store) {
             return Err(SuiErrorKind::UnsupportedFeatureError {
@@ -2562,7 +2563,8 @@ impl AuthorityState {
             }
             .into());
         }
-
+        info!("模拟内部1: {:#?}", t1.elapsed());
+        let t1 = Instant::now();
         // Cheap validity checks for a transaction, including input size limits.
         transaction.validity_check_no_gas_check(epoch_store.protocol_config())?;
 
@@ -2577,7 +2579,8 @@ impl AuthorityState {
             &self.config.transaction_deny_config,
             self.get_backing_package_store().as_ref(),
         )?;
-
+        info!("模拟内部2: {:#?}", t1.elapsed());
+        let t1 = Instant::now();
         let (mut input_objects, receiving_objects) = self.input_loader.read_objects_for_signing(
             // We don't want to cache this transaction since it's a simulation.
             None,
@@ -2585,7 +2588,8 @@ impl AuthorityState {
             &receiving_object_refs,
             epoch_store.epoch(),
         )?;
-
+        info!("模拟内部3: {:#?}", t1.elapsed());
+        let t1 = Instant::now();
         // mock a gas object if one was not provided
         let mock_gas_id = if transaction.gas().is_empty() {
             let mock_gas_object = Object::new_move(
@@ -2604,7 +2608,8 @@ impl AuthorityState {
         } else {
             None
         };
-
+        info!("模拟内部4: {:#?}", t1.elapsed());
+        let t1 = Instant::now();
         let protocol_config = epoch_store.protocol_config();
 
         let (gas_status, checked_input_objects) = if checks.enabled() {
@@ -2633,14 +2638,16 @@ impl AuthorityState {
 
             (gas_status, checked_input_objects)
         };
-
+        info!("模拟内部5: {:#?}", t1.elapsed());
+        let t1 = Instant::now();
         // TODO see if we can spin up a VM once and reuse it
         let executor = sui_execution::executor(
             protocol_config,
             true, // silent
         )
         .expect("Creating an executor should not fail here");
-
+        info!("模拟内部6: {:#?}", t1.elapsed());
+        let t1 = Instant::now();
         let (kind, signer, gas_data) = transaction.execution_parts();
         let early_execution_error = get_early_execution_error(
             &transaction.digest(),
@@ -2653,7 +2660,8 @@ impl AuthorityState {
             Some(error) => ExecutionOrEarlyError::Err(error),
             None => ExecutionOrEarlyError::Ok(()),
         };
-
+        info!("模拟内部7: {:#?}", t1.elapsed());
+        let t1 = Instant::now();
         let tracking_store = TrackingBackingStore::new(self.get_backing_store().as_ref());
 
         let (inner_temp_store, _, effects, execution_result) = executor.dev_inspect_transaction(
@@ -2675,7 +2683,8 @@ impl AuthorityState {
             transaction.digest(),
             checks.disabled(),
         );
-
+        info!("模拟内部8: {:#?}", t1.elapsed());
+        let t1 = Instant::now();
         let loaded_runtime_objects = tracking_store.into_read_objects();
         let unchanged_loaded_runtime_objects =
             crate::transaction_outputs::unchanged_loaded_runtime_objects(
@@ -2714,7 +2723,8 @@ impl AuthorityState {
 
             set
         };
-
+        info!("模拟内部9: {:#?}", t1.elapsed());
+        info!("模拟内部总执行时间： {:#?}", execution_start_time.elapsed());
         Ok(SimulateTransactionResult {
             objects: object_set,
             events: effects.events_digest().map(|_| inner_temp_store.events),

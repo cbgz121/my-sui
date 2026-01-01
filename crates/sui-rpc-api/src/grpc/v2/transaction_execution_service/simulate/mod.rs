@@ -27,20 +27,23 @@ use sui_types::effects::TransactionEffectsAPI;
 use sui_types::transaction::TransactionDataAPI;
 use sui_types::transaction_executor::SimulateTransactionResult;
 use sui_types::transaction_executor::TransactionChecks;
-
+use std::time::Instant;
 mod resolve;
-
+use tracing::info;
 const GAS_COIN_SIZE_BYTES: u64 = 40;
 
 pub fn simulate_transaction(
     service: &RpcService,
     request: SimulateTransactionRequest,
 ) -> Result<SimulateTransactionResponse> {
+    let time_all = Instant::now();
+    let t1 = Instant::now();
     let executor = service
         .executor
         .as_ref()
         .ok_or_else(|| RpcError::new(tonic::Code::Unimplemented, "no transaction executor"))?;
-
+    info!("模拟外部1: {:#?}", t1.elapsed());
+    let t1 = Instant::now();
     let read_mask = request
         .read_mask
         .as_ref()
@@ -53,7 +56,8 @@ pub fn simulate_transaction(
         .ok_or_else(|| FieldViolation::new("transaction").with_reason(ErrorReason::FieldMissing))?;
 
     let checks = TransactionChecks::from(request.checks());
-
+    info!("模拟外部2: {:#?}", t1.elapsed());
+    let t1 = Instant::now();
     // TODO make this more efficient
     let (reference_gas_price, protocol_config) = {
         let system_state = service.reader.get_system_state_summary()?;
@@ -70,7 +74,8 @@ pub fn simulate_transaction(
 
         (system_state.reference_gas_price, protocol_config)
     };
-
+    info!("模拟外部3: {:#?}", t1.elapsed());
+    let t1 = Instant::now();
     // Try to parse out a fully-formed transaction. If one wasn't provided then we will attempt to
     // perform transaction resolution.
     let mut transaction = match sui_sdk_types::Transaction::try_from(transaction_proto) {
@@ -95,7 +100,7 @@ pub fn simulate_transaction(
             &protocol_config,
         )?,
     };
-
+    info!("模拟外部4: {:#?}", t1.elapsed());
     // Perform budgest estimation and gas selection if requested and if TransactionChecks are enabled (it
     // makes no sense to do gas selection if checks are disabled because such a transaction can't
     // ever be committed to the chain).
@@ -112,6 +117,7 @@ pub fn simulate_transaction(
         if request.transaction().gas_payment().budget.is_none()
             && request.transaction().bcs_opt().is_none()
         {
+            let t1 = Instant::now();
             let mut estimation_transaction = transaction.clone();
             estimation_transaction.gas_data_mut().payment = Vec::new();
             estimation_transaction.gas_data_mut().budget = protocol_config.max_tx_gas();
@@ -119,7 +125,7 @@ pub fn simulate_transaction(
             let simulation_result = executor
                 .simulate_transaction(estimation_transaction, TransactionChecks::Enabled)
                 .map_err(anyhow::Error::from)?;
-
+            info!("模拟外部5: {:#?}", t1.elapsed());
             if !simulation_result.effects.status().is_ok() {
                 return Err(RpcError::new(
                     tonic::Code::InvalidArgument,
@@ -129,7 +135,7 @@ pub fn simulate_transaction(
                     ),
                 ));
             }
-
+            let t1 = Instant::now();
             let estimate = estimate_gas_budget_from_gas_cost(
                 simulation_result.effects.gas_cost_summary(),
                 reference_gas_price,
@@ -152,8 +158,9 @@ pub fn simulate_transaction(
                 ));
             }
             transaction.gas_data_mut().budget = estimate;
+            info!("模拟外部6: {:#?}", t1.elapsed());
         }
-
+        let t1 = Instant::now();
         if transaction.gas_data().payment.is_empty() {
             let input_objects = transaction
                 .input_objects()
@@ -175,8 +182,9 @@ pub fn simulate_transaction(
             )?;
             transaction.gas_data_mut().payment = gas_coins;
         }
+        info!("模拟外部7: {:#?}", t1.elapsed());
     }
-
+    let t1 = Instant::now();
     let SimulateTransactionResult {
         effects,
         events,
@@ -187,7 +195,8 @@ pub fn simulate_transaction(
     } = executor
         .simulate_transaction(transaction.clone(), checks)
         .map_err(anyhow::Error::from)?;
-
+    info!("模拟外部8: {:#?}", t1.elapsed());
+    let t1 = Instant::now();
     let transaction = if let Some(submask) = read_mask.subtree("transaction") {
         let mut message = ExecutedTransaction::default();
         let transaction = sui_sdk_types::Transaction::try_from(transaction)?;
@@ -246,7 +255,8 @@ pub fn simulate_transaction(
     } else {
         None
     };
-
+    info!("模拟外部9: {:#?}", t1.elapsed());
+    let t1 = Instant::now();
     let outputs = if read_mask.contains(SimulateTransactionResponse::COMMAND_OUTPUTS_FIELD) {
         execution_result
             .into_iter()
@@ -267,10 +277,11 @@ pub fn simulate_transaction(
     } else {
         Vec::new()
     };
-
+    info!("模拟外部10: {:#?}", t1.elapsed());
     let mut response = SimulateTransactionResponse::default();
     response.transaction = transaction;
     response.command_outputs = outputs;
+    info!("模拟外部总执行时间: {:#?}", time_all.elapsed());
     Ok(response)
 }
 
