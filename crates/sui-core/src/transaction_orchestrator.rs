@@ -167,6 +167,10 @@ where
     }
 }
 
+pub async fn timestamp_mic() -> i128 {
+    time::OffsetDateTime::now_utc().unix_timestamp_nanos() / 1000
+}
+
 impl<A> TransactionOrchestrator<A>
 where
     A: AuthorityAPI + Send + Sync + 'static + Clone,
@@ -259,6 +263,7 @@ where
         request: ExecuteTransactionRequestV3,
         client_addr: Option<SocketAddr>,
     ) -> Result<ExecuteTransactionResponseV3, QuorumDriverError> {
+        tracing::info!("执行到execute_transaction_v3时间戳: {}", timestamp_mic().await);
         let timer = Instant::now();
         let tx_type = if request.transaction.is_consensus_tx() {
             TxType::SharedObject

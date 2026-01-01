@@ -61,11 +61,12 @@ impl TransactionSubmitter {
         A: AuthorityAPI + Send + Sync + 'static + Clone,
     {
         let start_time = Instant::now();
+        let start_time1 = Instant::now();
 
         self.metrics
             .submit_amplification_factor
             .observe(amplification_factor as f64);
-
+        tracing::info!("metrics耗时: {:#?}", start_time1.elapsed());
         let mut retrier = RequestRetrier::new(
             authority_aggregator,
             client_monitor,
@@ -89,6 +90,8 @@ impl TransactionSubmitter {
             while request_rpcs.len() < amplification_factor as usize {
                 match retrier.next_target() {
                     Ok((name, client)) => {
+                        let start_time11 = Instant::now();
+                        tracing::info!("选择的validator是:{}", name);
                         let display_name = authority_aggregator.get_display_name(&name);
                         self.metrics
                             .validator_selections
@@ -111,6 +114,7 @@ impl TransactionSubmitter {
                         };
 
                         request_rpcs.push(wrapped_fut);
+                        tracing::info!("提交一个耗时: {:#?}", start_tstart_time11ime1.elapsed());
                     }
                     Err(_) if request_rpcs.is_empty() => {
                         // No more targets and no requests in flight
