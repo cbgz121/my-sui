@@ -418,38 +418,41 @@ where
             .map_err(QuorumDriverError::InvalidUserSignature)?
             .into_tx();
         let tx_digest = *verified_transaction.digest();
-        tracing::info!("提交交易之前execute_transaction_with_effects_waiting耗时1: {:#?}", t1.elapsed());
+        tracing::info!(
+            "提交交易之前execute_transaction_with_effects_waiting耗时1: {:#?}",
+            t1.elapsed()
+        );
         // Early validation check against local state before submission to catch non-retriable errors
         // TODO: Consider moving this check to TransactionDriver for per-retry validation
-        let t1 = Instant::now();
-        if self.enable_early_validation
-            && let Err(e) = self.validator_state.check_transaction_validity(
-                &epoch_store,
-                &verified_transaction,
-                enforce_live_input_objects,
-            )
-        {
-            let error_category = e.categorize();
-            if !error_category.is_submission_retriable() {
-                // Skip early validation rejection if transaction has already been executed (allows retries to return cached results)
-                if !self.validator_state.is_tx_already_executed(&tx_digest) {
-                    self.metrics
-                        .early_validation_rejections
-                        .with_label_values(&[e.to_variant_name()])
-                        .inc();
-                    debug!(
-                        error = ?e,
-                        "Transaction rejected during early validation"
-                    );
+        // let t1 = Instant::now();
+        // if self.enable_early_validation
+        //     && let Err(e) = self.validator_state.check_transaction_validity(
+        //         &epoch_store,
+        //         &verified_transaction,
+        //         enforce_live_input_objects,
+        //     )
+        // {
+        //     let error_category = e.categorize();
+        //     if !error_category.is_submission_retriable() {
+        //         // Skip early validation rejection if transaction has already been executed (allows retries to return cached results)
+        //         if !self.validator_state.is_tx_already_executed(&tx_digest) {
+        //             self.metrics
+        //                 .early_validation_rejections
+        //                 .with_label_values(&[e.to_variant_name()])
+        //                 .inc();
+        //             debug!(
+        //                 error = ?e,
+        //                 "Transaction rejected during early validation"
+        //             );
 
-                    return Err(QuorumDriverError::TransactionFailed {
-                        category: error_category,
-                        details: e.to_string(),
-                    });
-                }
-            }
-        }
-        tracing::info!("提交交易之前execute_transaction_with_effects_waiting耗时2: {:#?}", t1.elapsed());
+        //             return Err(QuorumDriverError::TransactionFailed {
+        //                 category: error_category,
+        //                 details: e.to_string(),
+        //             });
+        //         }
+        //     }
+        // }
+        // tracing::info!("提交交易之前execute_transaction_with_effects_waiting耗时2: {:#?}", t1.elapsed());
         let t1 = Instant::now();
         // Add transaction to WAL log.
         let guard =
@@ -487,7 +490,10 @@ where
         } else {
             1
         };
-        tracing::info!("提交交易之前execute_transaction_with_effects_waiting耗时3: {:#?}", t1.elapsed());
+        tracing::info!(
+            "提交交易之前execute_transaction_with_effects_waiting耗时3: {:#?}",
+            t1.elapsed()
+        );
         // Wait for one of the execution futures to succeed, or all of them to fail.
         let mut execution_futures = FuturesUnordered::new();
         for i in 0..num_submissions {
